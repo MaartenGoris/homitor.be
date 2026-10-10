@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Homitor – Live kweekwand</title>
+<meta name="description" content="Live metingen van de Homitor kweekwand: pH, EC, temperatuur, luchtvochtigheid en camerabeeld.">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #1a1a1a; --panel: #262626; --line: #3a3a3a; --text: #e0e0e0; --muted: #9a9a9a;
+    --green: #6fbf73; --gold: #c89937; --red: #d9534f;
+  }
+  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+  header { background: #222; border-bottom: 3px solid var(--green); }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 0 16px; }
+  header .wrap { display: flex; justify-content: space-between; align-items: center; padding-top: 14px; padding-bottom: 14px; gap: 12px; }
+  .logo { font-size: 1.5rem; font-weight: 700; } .logo span { color: var(--green); }
+  #status { font-size: .9rem; color: var(--muted); text-align: right; }
+  #status .live { color: var(--green); } #status .stale { color: var(--gold); }
+  main { padding: 24px 0 40px; display: grid; gap: 20px; }
+  h2 { font-size: 1.05rem; color: var(--muted); font-weight: 600; margin-bottom: 10px; }
+  .panel { background: var(--panel); border-radius: 10px; padding: 16px; }
+  .tiles { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+  .tile { background: var(--panel); border-radius: 10px; padding: 14px 16px; border-left: 4px solid var(--line); }
+  .tile.ok { border-left-color: var(--green); } .tile.warn { border-left-color: var(--gold); } .tile.off { border-left-color: var(--red); opacity: .75; }
+  .tile .name { color: var(--muted); font-size: .9rem; }
+  .tile .value { font-size: 1.9rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .tile .unit { font-size: 1rem; color: var(--muted); margin-left: 4px; }
+  .tile .sub { font-size: .8rem; color: var(--muted); }
+  .charts { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .chart-title { color: var(--muted); font-size: .9rem; }
+  .chart-box { height: 190px; }
+  .row { display: grid; gap: 20px; grid-template-columns: 3fr 2fr; }
+  #photo { width: 100%; border-radius: 8px; display: block; background: #111; }
+  .relay { display: flex; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .relay:last-child { border-bottom: none; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #555; margin-right: 10px; flex: none; }
+  .dot.on { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .ev { display: grid; grid-template-columns: 110px 1fr; gap: 10px; padding: 4px 0; border-bottom: 1px solid #2f2f2f; font-size: .9rem; }
+  .ev .t { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .empty { color: var(--muted); padding: 30px 0; text-align: center; }
+  footer { border-top: 1px solid var(--line); padding: 20px 0; color: var(--muted); font-size: .85rem; }
+  footer a { color: var(--green); }
+  @media (max-width: 760px) { .row { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="logo">Hom<span>itor</span></div>
+    <div id="status">laden…</div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section><div class="tiles" id="tiles"></div></section>
+
+  <section class="panel">
+    <h2>Laatste 48 uur</h2>
+    <div class="charts" id="charts"></div>
+  </section>
+
+  <section class="row">
+    <div class="panel">
+      <h2 id="photo-title">Camera</h2>
+      <img id="photo" alt="Laatste foto van de kweekwand">
+    </div>
+    <div class="panel">
+      <h2>Uitgangen</h2>
+      <div id="relays"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Recente gebeurtenissen</h2>
+    <div id="events"></div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">Homitor – een AI-gestuurde kweekwand in opbouw · een project van <a href="https://www.endego.be">EnDeGo</a></div>
+</footer>
+
+<script>
+// Data is published by the Pi to the 'data' branch of this repository
+const DATA_URL = 'https://raw.githubusercontent.com/MaartenGoris/homitor.be/data/';
+const charts = {};
+const fmtDateTime = ts => new Date(ts * 1000).toLocaleString('nl-BE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+const fmtTick = ts => new Date(ts * 1000).toLocaleString('nl-BE', { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function renderStatus(updated) {
+  const age = (Date.now() / 1000 - updated) / 60;
+  const cls = age < 15 ? 'live' : 'stale';
+  document.getElementById('status').innerHTML =
+    `<span class="${cls}">●</span> bijgewerkt ${fmtDateTime(updated)}${age >= 15 ? ' (verouderd)' : ''}`;
+}
+
+function renderTiles(sensors) {
+  document.getElementById('tiles').innerHTML = Object.values(sensors).map(s => {
+    let cls = 'off', sub = 'geen meting';
+    if (s.online && s.value !== null) {
+      const [lo, hi] = s.target || [-Infinity, Infinity];
+      cls = s.value >= lo && s.value <= hi ? 'ok' : 'warn';
+      sub = s.target ? `doel ${s.target[0]} – ${s.target[1]}` : '';
+    }
+    return `<div class="tile ${cls}"><div class="name">${esc(s.name)}</div>
+      <div class="value">${s.value ?? '–'}<span class="unit">${esc(s.unit)}</span></div><div class="sub">${sub}</div></div>`;
+  }).join('');
+}
+
+function renderCharts(history, sensors) {
+  const box = document.getElementById('charts');
+  for (const [k, points] of Object.entries(history)) {
+    const s = sensors[k];
+    if (!s) continue;
+    if (!charts[k]) {
+      const div = document.createElement('div');
+      div.innerHTML = `<div class="chart-title">${esc(s.name)} (${esc(s.unit)})</div><div class="chart-box"><canvas></canvas></div>`;
+      box.appendChild(div);
+      charts[k] = new Chart(div.querySelector('canvas'), {
+        type: 'line',
+        data: { datasets: [{ data: [], borderColor: '#6fbf73', borderWidth: 2, pointRadius: 0, tension: .25 }] },
+        options: {
+          responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
+          plugins: { legend: { display: false }, tooltip: { callbacks: { title: i => fmtDateTime(i[0].parsed.x) } } },
+          scales: {
+            x: { type: 'linear', ticks: { color: '#888', maxTicksLimit: 5, callback: fmtTick }, grid: { color: '#2f2f2f' } },
+            y: { ticks: { color: '#888' }, grid: { color: '#2f2f2f' } }
+          }
+        }
+      });
+    }
+    charts[k].data.datasets[0].data = points.map(([x, y]) => ({ x, y }));
+    charts[k].update();
+  }
+}
+
+function renderPhoto(photo) {
+  if (!photo) return;
+  document.getElementById('photo').src = `${DATA_URL}${photo.file}?t=${Math.round(photo.taken)}`;
+  document.getElementById('photo-title').textContent = `Camera – ${fmtDateTime(photo.taken)}`;
+}
+
+function renderRelays(relays) {
+  document.getElementById('relays').innerHTML = Object.values(relays).map(r =>
+    `<div class="relay"><span class="dot ${r.on ? 'on' : ''}"></span>${esc(r.name)}</div>`).join('');
+}
+
+function renderEvents(events) {
+  document.getElementById('events').innerHTML = events.length
+    ? events.map(e => `<div class="ev"><span class="t">${fmtDateTime(e.ts)}</span><span>${esc(e.message)}</span></div>`).join('')
+    : '<div class="empty">Nog geen gebeurtenissen.</div>';
+}
+
+async function refresh() {
+  try {
+    const res = await fetch(`${DATA_URL}data.json?t=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) throw new Error(res.status);
+    const d = await res.json();
+    renderStatus(d.updated); renderTiles(d.sensors); renderCharts(d.history, d.sensors);
+    renderPhoto(d.photo); renderRelays(d.relays); renderEvents(d.events);
+  } catch (e) {
+    document.getElementById('status').textContent = 'nog geen live data beschikbaar';
+    if (!document.getElementById('tiles').innerHTML)
+      document.getElementById('tiles').innerHTML = '<div class="empty">De kweekwand heeft nog geen data gepubliceerd.</div>';
+  }
+}
+
+refresh();
+setInterval(refresh, 60000);
+</script>
+</body>
+</html>
