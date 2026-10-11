@@ -85,7 +85,7 @@
   </section>
 
   <section class="panel">
-    <h2>AI-advies</h2>
+    <h2>AI-besturing</h2>
     <div id="ai"><div class="empty">Nog geen AI-analyse.</div></div>
   </section>
 
@@ -170,14 +170,15 @@ const STATUS = { pending: 'wacht op goedkeuring', executed: 'uitgevoerd', reject
 function renderAI(a) {
   if (!a) return;
   const props = a.proposals.length
-    ? a.proposals.map(p => `<div class="prop">${esc(p.relay)} ${p.duration_s} s · ${esc(STATUS[p.status] || p.status)}<br><span>${esc(p.reason)}</span></div>`).join('')
-    : '<div class="prop"><span>Geen acties voorgesteld.</span></div>';
+    ? a.proposals.map(p => `<div class="prop">${esc(p.relay)} ${p.action === 'off' ? 'uit' : 'aan' + (p.duration_s > 0 ? ' ' + p.duration_s + ' s' : '')} · ${esc(STATUS[p.status] || p.status)}<br><span>${esc(p.reason)}</span></div>`).join('')
+    : '<div class="prop"><span>Geen acties.</span></div>';
   document.getElementById('ai').innerHTML = `
     <div class="ai-meta">${fmtDateTime(a.ts)} · ${esc(a.model)}</div>
     <div class="ai-summary">${esc(a.summary)}</div>
     <div>${a.risks.map(r => `<span class="risk ${esc(r.level)}" title="${esc(r.explanation)}">${esc(r.name)}: ${esc(r.level)}</span>`).join('')}</div>
     <div class="ai-grid"><div><b>Oplossing</b>${esc(a.solution)}</div><div><b>Klimaat</b>${esc(a.climate)}</div><div><b>Foto</b>${esc(a.photo)}</div></div>
-    ${props}`;
+    ${props}
+    ${a.next_check_minutes ? `<div class="ai-meta" style="margin-top:8px">Volgende ronde over ${a.next_check_minutes} min</div>` : ''}`;
 }
 
 function renderEvents(events) {
