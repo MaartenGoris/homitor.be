@@ -138,7 +138,7 @@ function renderCharts(history, sensors) {
       box.appendChild(div);
       charts[k] = new Chart(div.querySelector('canvas'), {
         type: 'line',
-        data: { datasets: [{ data: [], borderColor: '#6fbf73', borderWidth: 2, pointRadius: 0, tension: .25 }] },
+        data: { datasets: [{ data: [], borderColor: '#6fbf73', backgroundColor: '#6fbf73', borderWidth: 2, pointRadius: 2, tension: .25 }] },
         options: {
           responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
           plugins: { legend: { display: false }, tooltip: { callbacks: { title: i => fmtDateTime(i[0].parsed.x) } } },
@@ -149,6 +149,10 @@ function renderCharts(history, sensors) {
         }
       });
     }
+    // Fixed 48 h window: with few points the automatic axis is meaningless
+    const now = Date.now() / 1000;
+    charts[k].options.scales.x.min = now - 48 * 3600;
+    charts[k].options.scales.x.max = now;
     charts[k].data.datasets[0].data = points.map(([x, y]) => ({ x, y }));
     charts[k].update();
   }
