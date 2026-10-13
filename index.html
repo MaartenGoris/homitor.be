@@ -52,6 +52,14 @@
   .risk.hoog { background: rgba(217,83,79,.2); color: #e06c69; }
   .prop { padding: 8px 0; border-top: 1px solid var(--line); font-size: .92rem; }
   .prop span { color: var(--muted); font-size: .82rem; }
+  .status { display: flex; align-items: center; gap: 18px; }
+  .lamps { display: flex; gap: 8px; background: #111; padding: 8px 10px; border-radius: 22px; flex: none; }
+  .lamp { width: 26px; height: 26px; border-radius: 50%; background: #2c2c2c; }
+  .lamp.on.red { background: var(--red); box-shadow: 0 0 12px var(--red); }
+  .lamp.on.yellow { background: var(--gold); box-shadow: 0 0 12px var(--gold); }
+  .lamp.on.green { background: var(--green); box-shadow: 0 0 12px var(--green); }
+  .status .state { font-size: 1.15rem; font-weight: 600; }
+  .status .reasons { color: var(--muted); font-size: .88rem; margin-top: 2px; }
   footer { border-top: 1px solid var(--line); padding: 20px 0; color: var(--muted); font-size: .85rem; }
   footer a { color: var(--green); }
   @media (max-width: 760px) { .row { grid-template-columns: 1fr; } }
@@ -66,6 +74,11 @@
 </header>
 
 <main class="wrap">
+  <section class="panel status" id="light" hidden>
+    <div class="lamps"><div class="lamp red"></div><div class="lamp yellow"></div><div class="lamp green"></div></div>
+    <div><div class="state" id="light-state"></div><div class="reasons" id="light-reasons"></div></div>
+  </section>
+
   <section><div class="tiles" id="tiles"></div></section>
 
   <section class="panel">
@@ -127,21 +140,33 @@ function renderTiles(sensors) {
   }).join('');
 }
 
+// Sensors with the same unit (e.g. two air temperatures) share one chart, one line each
+const LINE_COLORS = ['#6fbf73', '#c89937', '#5fa8d3', '#c678dd'];
+const baseName = name => name.replace(/\s*\(.*\)$/, '');
+
 function renderCharts(history, sensors) {
   const box = document.getElementById('charts');
-  for (const [k, points] of Object.entries(history)) {
-    const s = sensors[k];
-    if (!s) continue;
-    if (!charts[k]) {
+  const groups = {};
+  for (const k of Object.keys(history)) if (sensors[k]) (groups[sensors[k].unit] ||= []).push(k);
+  for (const [unit, keys] of Object.entries(groups)) {
+    const id = keys.join('+');   // a new sensor in a group gives a new chart
+    if (!charts[id]) {
+      const multi = keys.length > 1;
       const div = document.createElement('div');
-      div.innerHTML = `<div class="chart-title">${esc(s.name)} (${esc(s.unit)})</div><div class="chart-box"><canvas></canvas></div>`;
+      div.innerHTML = `<div class="chart-title">${esc(multi ? baseName(sensors[keys[0]].name) : sensors[keys[0]].name)} (${esc(unit)})</div><div class="chart-box"><canvas></canvas></div>`;
       box.appendChild(div);
-      charts[k] = new Chart(div.querySelector('canvas'), {
+      charts[id] = new Chart(div.querySelector('canvas'), {
         type: 'line',
-        data: { datasets: [{ data: [], borderColor: '#6fbf73', backgroundColor: '#6fbf73', borderWidth: 2, pointRadius: 2, tension: .25 }] },
+        data: { datasets: keys.map((k, i) => ({
+          label: multi ? (sensors[k].name.match(/\((.*)\)$/) || [, sensors[k].name])[1] : sensors[k].name,
+          data: [], borderColor: LINE_COLORS[i % LINE_COLORS.length], backgroundColor: LINE_COLORS[i % LINE_COLORS.length],
+          borderWidth: 2, pointRadius: 2, tension: .25 })) },
         options: {
           responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
-          plugins: { legend: { display: false }, tooltip: { callbacks: { title: i => fmtDateTime(i[0].parsed.x) } } },
+          plugins: {
+            legend: { display: multi, labels: { color: '#bbb', boxWidth: 12, boxHeight: 2 } },
+            tooltip: { callbacks: { title: i => fmtDateTime(i[0].parsed.x) } }
+          },
           scales: {
             x: { type: 'linear', ticks: { color: '#888', maxTicksLimit: 5, callback: fmtTick }, grid: { color: '#2f2f2f' } },
             y: { ticks: { color: '#888' }, grid: { color: '#2f2f2f' } }
@@ -151,11 +176,23 @@ function renderCharts(history, sensors) {
     }
     // Fixed 48 h window: with few points the automatic axis is meaningless
     const now = Date.now() / 1000;
-    charts[k].options.scales.x.min = now - 48 * 3600;
-    charts[k].options.scales.x.max = now;
-    charts[k].data.datasets[0].data = points.map(([x, y]) => ({ x, y }));
-    charts[k].update();
+    charts[id].options.scales.x.min = now - 48 * 3600;
+    charts[id].options.scales.x.max = now;
+    keys.forEach((k, i) => charts[id].data.datasets[i].data = history[k].map(([x, y]) => ({ x, y })));
+    charts[id].update();
   }
+}
+
+const LIGHT_STATES = { green: 'Alles in orde', yellow: 'Aandacht nodig', red: 'Probleem' };
+
+function renderLight(light) {
+  if (!light) return;
+  document.getElementById('light').hidden = false;
+  for (const lvl of ['red', 'yellow', 'green'])
+    document.querySelector(`.lamp.${lvl}`).classList.toggle('on', light.level === lvl);
+  document.getElementById('light-state').textContent = LIGHT_STATES[light.level] || light.level;
+  document.getElementById('light-reasons').textContent = light.reasons.length
+    ? light.reasons.map(r => r.text).join(' · ') : 'Alle metingen binnen doelbereik, geen opmerkingen van de AI.';
 }
 
 function renderPhoto(photo) {
@@ -196,7 +233,7 @@ async function refresh() {
     const res = await fetch(`${DATA_URL}data.json?t=${Date.now()}`, { cache: 'no-store' });
     if (!res.ok) throw new Error(res.status);
     const d = await res.json();
-    renderStatus(d.updated); renderTiles(d.sensors); renderCharts(d.history, d.sensors);
+    renderStatus(d.updated); renderLight(d.light); renderTiles(d.sensors); renderCharts(d.history, d.sensors);
     renderPhoto(d.photo); renderRelays(d.relays); renderEvents(d.events); renderAI(d.ai);
   } catch (e) {
     document.getElementById('status').textContent = 'nog geen live data beschikbaar';
