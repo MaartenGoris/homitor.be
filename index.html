@@ -211,7 +211,7 @@ const STATUS = { pending: 'wacht op goedkeuring', executed: 'uitgevoerd', reject
 function renderAI(a) {
   if (!a) return;
   const props = a.proposals.length
-    ? a.proposals.map(p => `<div class="prop">${esc(p.relay)} ${p.action === 'off' ? 'uit' : 'aan' + (p.duration_s > 0 ? ' ' + p.duration_s + ' s' : '')} · ${esc(STATUS[p.status] || p.status)}<br><span>${esc(p.reason)}</span></div>`).join('')
+    ? a.proposals.map(p => `<div class="prop">${esc(p.relay)} ${p.action === 'dose' ? p.duration_s + ' ml' : p.action === 'off' ? 'uit' : 'aan' + (p.duration_s > 0 ? ' ' + p.duration_s + ' s' : '')} · ${esc(STATUS[p.status] || p.status)}<br><span>${esc(p.reason)}</span></div>`).join('')
     : '<div class="prop"><span>Geen acties.</span></div>';
   document.getElementById('ai').innerHTML = `
     <div class="ai-meta">${fmtDateTime(a.ts)} · ${esc(a.model)}</div>
