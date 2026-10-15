@@ -142,7 +142,7 @@ function renderTiles(sensors) {
 
 // Sensors with the same unit (e.g. two air temperatures) share one chart, one line each
 const LINE_COLORS = ['#6fbf73', '#c89937', '#5fa8d3', '#c678dd'];
-const baseName = name => name.replace(/\s*\(.*\)$/, '');
+const baseName = name => name.replace(/\s*(\(.*\)|\d+)$/, '');   // 'Luchttemperatuur 2' / '... (SHT20)' -> 'Luchttemperatuur'
 
 function renderCharts(history, sensors) {
   const box = document.getElementById('charts');
