@@ -23,6 +23,8 @@
   h2 { font-size: 1.05rem; color: var(--muted); font-weight: 600; margin-bottom: 10px; }
   .panel { background: var(--panel); border-radius: 10px; padding: 16px; }
   .tiles { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+  #tiles { display: grid; gap: 10px; }
+  .grp-title { grid-column: 1 / -1; font-size: .95rem; color: var(--text); font-weight: 600; margin: 6px 0 -2px; }
   .tile { background: var(--panel); border-radius: 10px; padding: 14px 16px; border-left: 4px solid var(--line); }
   .tile.ok { border-left-color: var(--green); } .tile.warn { border-left-color: var(--gold); } .tile.off { border-left-color: var(--red); opacity: .75; }
   .tile .name { color: var(--muted); font-size: .9rem; }
@@ -79,7 +81,7 @@
     <div><div class="state" id="light-state"></div><div class="reasons" id="light-reasons"></div></div>
   </section>
 
-  <section><div class="tiles" id="tiles"></div></section>
+  <section><div id="tiles"></div></section>
 
   <section class="panel">
     <h2>Laatste 48 uur</h2>
@@ -127,8 +129,16 @@ function renderStatus(updated) {
     `<span class="${cls}">●</span> bijgewerkt ${fmtDateTime(updated)}${age >= 15 ? ' (verouderd)' : ''}`;
 }
 
+// Sensors per group (Water, Omgeving, ...), in the published order
+function byGroup(sensors) {
+  const groups = {};
+  for (const [k, s] of Object.entries(sensors)) (groups[s.group || ''] ||= []).push([k, s]);
+  return Object.entries(groups);
+}
+
 function renderTiles(sensors) {
-  document.getElementById('tiles').innerHTML = Object.values(sensors).map(s => {
+  document.getElementById('tiles').innerHTML = byGroup(sensors).map(([group, list]) =>
+    (group ? `<div class="grp-title">${esc(group)}</div>` : '') + '<div class="tiles">' + list.map(([k, s]) => {
     let cls = 'off', sub = 'geen meting';
     if (s.online && s.value !== null) {
       const [lo, hi] = s.target || [-Infinity, Infinity];
@@ -137,21 +147,30 @@ function renderTiles(sensors) {
     }
     return `<div class="tile ${cls}"><div class="name">${esc(s.name)}</div>
       <div class="value">${s.value ?? '–'}<span class="unit">${esc(s.unit)}</span></div><div class="sub">${sub}</div></div>`;
-  }).join('');
+  }).join('') + '</div>').join('');
 }
 
-// Sensors with the same unit (e.g. two air temperatures) share one chart, one line each
+// Sensors of the same group with the same unit (e.g. the air temperatures) share one chart, one line each
 const LINE_COLORS = ['#6fbf73', '#c89937', '#5fa8d3', '#c678dd'];
 const baseName = name => name.replace(/\s*(\(.*\)|\d+)$/, '');   // 'Luchttemperatuur 2' / '... (SHT20)' -> 'Luchttemperatuur'
 
 function renderCharts(history, sensors) {
   const box = document.getElementById('charts');
   const groups = {};
-  for (const k of Object.keys(history)) if (sensors[k]) (groups[sensors[k].unit] ||= []).push(k);
-  for (const [unit, keys] of Object.entries(groups)) {
-    const id = keys.join('+');   // a new sensor in a group gives a new chart
+  for (const k of Object.keys(history)) if (sensors[k]) (groups[(sensors[k].group || '') + '|' + sensors[k].unit] ||= []).push(k);
+  const ids = Object.values(groups).map(keys => keys.join('+'));   // a new sensor in a group gives a new chart
+  if (ids.some(id => !charts[id])) {                               // layout changed: build all charts again
+    for (const c of Object.values(charts)) c.destroy();
+    for (const id of Object.keys(charts)) delete charts[id];
+    box.innerHTML = '';
+  }
+  for (const [gu, keys] of Object.entries(groups)) {
+    const [group, unit] = gu.split('|');
+    const id = keys.join('+');
     if (!charts[id]) {
       const multi = keys.length > 1;
+      if (group && !box.querySelector(`[data-group="${CSS.escape(group)}"]`))
+        box.insertAdjacentHTML('beforeend', `<div class="grp-title" data-group="${esc(group)}">${esc(group)}</div>`);
       const div = document.createElement('div');
       div.innerHTML = `<div class="chart-title">${esc(multi ? baseName(sensors[keys[0]].name) : sensors[keys[0]].name)} (${esc(unit)})</div><div class="chart-box"><canvas></canvas></div>`;
       box.appendChild(div);
