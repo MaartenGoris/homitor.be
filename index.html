@@ -182,10 +182,13 @@ function renderTiles(sensors) {
 const LINE_COLORS = ['#6fbf73', '#c89937', '#5fa8d3', '#c678dd'];
 const baseName = name => name.replace(/\s*(\(.*\)|\d+)$/, '');   // 'Luchttemperatuur 2' / '... (SHT20)' -> 'Luchttemperatuur'
 
+// Chart per group and unit; sensors with the same chart label share one chart (two units: right axis)
+const chartKey = s => (s.group || '') + '|' + (s.chart || s.unit);
+
 function renderCharts(history, sensors) {
   const box = document.getElementById('charts');
   const groups = {};
-  for (const k of Object.keys(history)) if (sensors[k]) (groups[(sensors[k].group || '') + '|' + sensors[k].unit] ||= []).push(k);
+  for (const k of Object.keys(history)) if (sensors[k]) (groups[chartKey(sensors[k])] ||= []).push(k);
   const ids = Object.values(groups).map(keys => keys.join('+'));   // a new sensor in a group gives a new chart
   if (ids.some(id => !charts[id])) {                               // layout changed: build all charts again
     for (const c of Object.values(charts)) c.destroy();
@@ -193,19 +196,21 @@ function renderCharts(history, sensors) {
     box.innerHTML = '';
   }
   for (const [gu, keys] of Object.entries(groups)) {
-    const [group, unit] = gu.split('|');
+    const [group, label] = gu.split('|');
+    const units = [...new Set(keys.map(k => sensors[k].unit))], dual = units.length > 1;
     const id = keys.join('+');
     if (!charts[id]) {
       const multi = keys.length > 1;
       if (group && !box.querySelector(`[data-group="${CSS.escape(group)}"]`))
         box.insertAdjacentHTML('beforeend', `<div class="grp-title" data-group="${esc(group)}">${esc(group)}</div>`);
       const div = document.createElement('div');
-      div.innerHTML = `<div class="chart-title">${esc(multi ? baseName(sensors[keys[0]].name) : sensors[keys[0]].name)} (${esc(unit)})</div><div class="chart-box"><canvas></canvas></div>`;
+      div.innerHTML = `<div class="chart-title">${esc(dual ? label : multi ? baseName(sensors[keys[0]].name) : sensors[keys[0]].name)} (${esc(units.join(' / '))})</div><div class="chart-box"><canvas></canvas></div>`;
       box.appendChild(div);
       charts[id] = new Chart(div.querySelector('canvas'), {
         type: 'line',
         data: { datasets: keys.map((k, i) => ({
-          label: multi ? (sensors[k].name.match(/\((.*)\)$/) || [, sensors[k].name])[1] : sensors[k].name,
+          label: dual ? `${sensors[k].name} (${sensors[k].unit})` : multi ? (sensors[k].name.match(/\((.*)\)$/) || [, sensors[k].name])[1] : sensors[k].name,
+          yAxisID: units.indexOf(sensors[k].unit) ? 'y1' : 'y',
           data: [], borderColor: LINE_COLORS[i % LINE_COLORS.length], backgroundColor: LINE_COLORS[i % LINE_COLORS.length],
           borderWidth: 2, pointRadius: 2, tension: .25 })) },
         options: {
@@ -216,7 +221,8 @@ function renderCharts(history, sensors) {
           },
           scales: {
             x: { type: 'linear', ticks: { color: '#888', maxTicksLimit: 5, callback: fmtTick }, grid: { color: '#2f2f2f' } },
-            y: { ticks: { color: '#888' }, grid: { color: '#2f2f2f' } }
+            y: { ticks: { color: '#888' }, grid: { color: '#2f2f2f' } },
+            ...(dual ? { y1: { position: 'right', ticks: { color: '#888' }, grid: { drawOnChartArea: false } } } : {})
           }
         }
       });
