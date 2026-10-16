@@ -34,7 +34,8 @@
   .tile .value.sev-warn { color: var(--orange); animation: none; }   /* in a tile that is red because of its other value */
   @keyframes value-blink { 50% { opacity: .15; } }
   .tile .values { display: flex; gap: 6px 16px; flex-wrap: wrap; }
-  .tile .val { display: flex; align-items: center; gap: 6px; }
+  .tile .val { display: flex; align-items: center; gap: 5px; }
+  .tile .val .unit { margin-left: 0; }
   .tile .range { display: flex; flex-direction: column; font-size: .72rem; line-height: 1.15; color: var(--muted); font-variant-numeric: tabular-nums; }
   .tile .name { color: var(--muted); font-size: .9rem; }
   .tile .value { font-size: 1.9rem; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -157,9 +158,10 @@ function sensorClass(s) {
 }
 function tileHtml(name, items) {
   const cls = items.map(([, s]) => sensorClass(s)).reduce((a, b) => SEV_RANK[b] > SEV_RANK[a] ? b : a);
-  // value, with the target range small next to it: upper limit above, lower limit below
-  const val = s => `<div class="val"><div class="value sev-${sensorClass(s)}">${s.value ?? '–'}<span class="unit">${esc(s.unit)}</span></div>` +
-    (s.target ? `<div class="range"><span>${s.target[1]}</span><span>${s.target[0]}</span></div>` : '') + '</div>';
+  // value, the target range small (upper limit above, lower below), then the unit
+  const val = s => `<div class="val"><div class="value sev-${sensorClass(s)}">${s.value ?? '–'}</div>` +
+    (s.target ? `<div class="range"><span>${s.target[1]}</span><span>${s.target[0]}</span></div>` : '') +
+    `<span class="unit">${esc(s.unit)}</span></div>`;
   const sub = items.some(([, s]) => sensorClass(s) === 'off') ? '<div class="sub">geen meting</div>' : '';
   return `<div class="tile ${cls}"><div class="name">${esc(name)}</div><div class="values">${items.map(([, s]) => val(s)).join('')}</div>${sub}</div>`;
 }
