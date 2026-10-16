@@ -27,13 +27,13 @@
   .grp-title { grid-column: 1 / -1; font-size: .95rem; color: var(--text); font-weight: 600; margin: 6px 0 -2px; }
   .tile { background: var(--panel); border-radius: 10px; padding: 14px 16px; border-left: 4px solid var(--line); }
   .tile.ok { border-left-color: var(--green); } .tile.warn { border-left-color: var(--orange); } .tile.off { border-left-color: var(--red); opacity: .75; }
-  .tile.alarm { border-left-color: var(--red); animation: tile-alarm 1s steps(1) infinite; }
-  .tile.alarm .value { color: var(--red); }
-  .tile.warn .value, .tile .value.sev-warn { color: var(--orange); } .tile .value.sev-alarm { color: var(--red); }
-  .tile.warn { background: rgba(240,145,47,.12); }
-  .tile .value.sev-ok, .tile .value.sev-off { color: var(--text); }
+  .tile.alarm { border-left-color: var(--red); }
+  .tile.warn .value, .tile .value.sev-warn { color: var(--orange); }
+  .tile.alarm .value, .tile .value.sev-alarm { color: var(--red); animation: value-blink 1s steps(1) infinite; }
+  .tile .value.sev-ok, .tile .value.sev-off { color: var(--text); animation: none; }
+  .tile .value.sev-warn { color: var(--orange); animation: none; }   /* in a tile that is red because of its other value */
+  @keyframes value-blink { 50% { opacity: .15; } }
   .tile .values { display: flex; gap: 14px; flex-wrap: wrap; }
-  @keyframes tile-alarm { 50% { border-left-color: transparent; background: rgba(217,83,79,.15); } }
   .tile .name { color: var(--muted); font-size: .9rem; }
   .tile .value { font-size: 1.9rem; font-weight: 600; font-variant-numeric: tabular-nums; }
   .tile .unit { font-size: 1rem; color: var(--muted); margin-left: 4px; }
