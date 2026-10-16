@@ -10,7 +10,7 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
     --bg: #1a1a1a; --panel: #262626; --line: #3a3a3a; --text: #e0e0e0; --muted: #9a9a9a;
-    --green: #6fbf73; --gold: #c89937; --red: #d9534f;
+    --green: #6fbf73; --gold: #c89937; --red: #d9534f; --orange: #f0912f;
   }
   body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
   header { background: #222; border-bottom: 3px solid var(--green); }
@@ -26,10 +26,11 @@
   #tiles { display: grid; gap: 10px; }
   .grp-title { grid-column: 1 / -1; font-size: .95rem; color: var(--text); font-weight: 600; margin: 6px 0 -2px; }
   .tile { background: var(--panel); border-radius: 10px; padding: 14px 16px; border-left: 4px solid var(--line); }
-  .tile.ok { border-left-color: var(--green); } .tile.warn { border-left-color: var(--gold); } .tile.off { border-left-color: var(--red); opacity: .75; }
+  .tile.ok { border-left-color: var(--green); } .tile.warn { border-left-color: var(--orange); } .tile.off { border-left-color: var(--red); opacity: .75; }
   .tile.alarm { border-left-color: var(--red); animation: tile-alarm 1s steps(1) infinite; }
   .tile.alarm .value { color: var(--red); }
-  .tile .value.sev-warn { color: var(--gold); } .tile .value.sev-alarm { color: var(--red); }
+  .tile.warn .value, .tile .value.sev-warn { color: var(--orange); } .tile .value.sev-alarm { color: var(--red); }
+  .tile.warn { background: rgba(240,145,47,.12); }
   .tile .value.sev-ok, .tile .value.sev-off { color: var(--text); }
   .tile .values { display: flex; gap: 14px; flex-wrap: wrap; }
   @keyframes tile-alarm { 50% { border-left-color: transparent; background: rgba(217,83,79,.15); } }
@@ -144,7 +145,14 @@ function byGroup(sensors) {
 
 // Sensors with the same tile label (temperature + humidity of one node) share one tile
 const SEV_RANK = { ok: 0, warn: 1, off: 2, alarm: 3 };
-function sensorClass(s) { return s.online && s.value !== null ? (s.severity || 'ok') : 'off'; }
+function sensorClass(s) {
+  if (!s.online || s.value === null) return 'off';
+  if (s.severity) return s.severity;
+  // older snapshots without severity: work it out from the target (alarm = target widened by half its width)
+  if (!s.target) return 'ok';
+  const [lo, hi] = s.target, m = (hi - lo) / 2, [alo, ahi] = s.alarm || [lo - m, hi + m];
+  return s.value < alo || s.value > ahi ? 'alarm' : s.value < lo || s.value > hi ? 'warn' : 'ok';
+}
 function tileHtml(name, items) {
   const cls = items.map(([, s]) => sensorClass(s)).reduce((a, b) => SEV_RANK[b] > SEV_RANK[a] ? b : a);
   const value = s => `${s.value ?? '–'}<span class="unit">${esc(s.unit)}</span>`;
