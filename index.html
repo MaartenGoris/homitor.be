@@ -41,6 +41,11 @@
   .tile .value { font-size: 1.9rem; font-weight: 600; font-variant-numeric: tabular-nums; }
   .tile .unit { font-size: 1rem; color: var(--muted); margin-left: 4px; }
   .tile .sub { font-size: .8rem; color: var(--muted); }
+  .range-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .range-head h2 { margin: 0; }
+  .ranges { display: flex; gap: 4px; }
+  .ranges button { padding: 4px 10px; font-size: .85rem; }
+  .ranges button.sel { border-color: var(--green); color: var(--green); }
   .charts { display: grid; gap: 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); }   /* two per row */
   @media (max-width: 760px) { .charts { grid-template-columns: 1fr; } }
   .chart-title { color: var(--muted); font-size: .9rem; }
@@ -95,7 +100,7 @@
   <section><div id="tiles"></div></section>
 
   <section class="panel">
-    <h2>Laatste 48 uur</h2>
+    <div class="range-head"><h2 id="range-title">Laatste 48 uur</h2><div class="ranges" id="ranges"></div></div>
     <div class="charts" id="charts"></div>
   </section>
 
@@ -183,6 +188,26 @@ function renderTiles(sensors) {
 const LINE_COLORS = ['#6fbf73', '#c89937', '#5fa8d3', '#c678dd'];
 const baseName = name => name.replace(/\s*(\(.*\)|\d+)$/, '');   // 'Luchttemperatuur 2' / '... (SHT20)' -> 'Luchttemperatuur'
 
+// Chart time range, remembered per browser
+const RANGES = [48, 24, 6, 1];
+let rangeH = 48;
+try { const v = Number(localStorage.getItem('chartHours')); if (RANGES.includes(v)) rangeH = v; } catch (e) {}
+function renderRanges() {
+  document.getElementById('ranges').innerHTML = RANGES.map(h =>
+    `<button class="${h === rangeH ? 'sel' : ''}" onclick="setRange(${h})">${h} u</button>`).join('');
+  document.getElementById('range-title').textContent = rangeH === 1 ? 'Laatste uur' : `Laatste ${rangeH} uur`;
+}
+let lastData = null;
+function setRange(h) {
+  rangeH = h; try { localStorage.setItem('chartHours', h); } catch (e) {}
+  renderRanges(); if (lastData) renderCharts(chartHistory(lastData), lastData.sensors);
+}
+// up to 6 h: the per-minute history (if the snapshot has it), longer: per 10 min
+function chartHistory(d) {
+  const since = Date.now() / 1000 - rangeH * 3600, src = rangeH <= 6 && d.history_recent ? d.history_recent : d.history;
+  return Object.fromEntries(Object.entries(src).map(([k, v]) => [k, v.filter(([t]) => t >= since)]));
+}
+
 // Chart per group and unit; sensors with the same chart label share one chart (two units: right axis)
 const chartKey = s => (s.group || '') + '|' + (s.chart || s.unit);
 
@@ -228,9 +253,9 @@ function renderCharts(history, sensors) {
         }
       });
     }
-    // Fixed 48 h window: with few points the automatic axis is meaningless
+    // Fixed window of the chosen range: with few points the automatic axis is meaningless
     const now = Date.now() / 1000;
-    charts[id].options.scales.x.min = now - 48 * 3600;
+    charts[id].options.scales.x.min = now - rangeH * 3600;
     charts[id].options.scales.x.max = now;
     keys.forEach((k, i) => charts[id].data.datasets[i].data = history[k].map(([x, y]) => ({ x, y })));
     charts[id].update();
@@ -287,7 +312,7 @@ async function refresh() {
     const res = await fetch(`${DATA_URL}data.json?t=${Date.now()}`, { cache: 'no-store' });
     if (!res.ok) throw new Error(res.status);
     const d = await res.json();
-    renderStatus(d.updated); renderLight(d.light); renderTiles(d.sensors); renderCharts(d.history, d.sensors);
+    renderStatus(d.updated); renderLight(d.light); renderTiles(d.sensors); lastData = d; renderCharts(chartHistory(d), d.sensors);
     renderPhoto(d.photo); renderRelays(d.relays); renderEvents(d.events); renderAI(d.ai);
   } catch (e) {
     document.getElementById('status').textContent = 'nog geen live data beschikbaar';
@@ -296,6 +321,7 @@ async function refresh() {
   }
 }
 
+renderRanges();
 refresh();
 setInterval(refresh, 60000);
 </script>
